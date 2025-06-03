@@ -55,11 +55,11 @@ if uploaded_file is not None and data_limite is not None:
     despesas_atrasadas = despesas[
         (despesas['data de vencimento'] <= data_limite) &
         ((despesas['data de pagamento'] > data_limite) | despesas['data de pagamento'].isna())
-    ]
+    ].copy()
 
     despesas_a_vencer = despesas[
         (despesas['data de vencimento'] > data_limite)
-    ]
+    ].copy()
 
     for idx, row in despesas_a_vencer.iterrows():
         if row['valor'] == 0 or pd.isna(row['valor']):
