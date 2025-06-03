@@ -16,7 +16,7 @@ def classificar_tipo(categoria):
 
 st.title("📊 Análise Integrada: Despesas, Receitas e Gap de Caixa")
 
-uploaded_file = st.file_uploader("📤 Escolha o arquivo CSV", type=["csv", "txt"])
+uploaded_file = st.file_uploader("📄 Escolha o arquivo CSV", type=["csv", "txt"])
 
 if uploaded_file is not None:
     try:
@@ -75,7 +75,6 @@ if uploaded_file is not None:
     st.dataframe(a_vencer_group)
     st.write(f"**Total:** R$ {a_vencer['valor'].sum():,.2f} | **{len(a_vencer)} registros**")
 
-    # Gráfico de Despesas a Vencer
     a_vencer['mes_ano'] = a_vencer['data de vencimento'].dt.to_period('M').astype(str)
     grafico_despesas = a_vencer.groupby('mes_ano')['valor'].sum().reset_index()
     st.subheader("📊 Gráfico: Despesas a Vencer Mês a Mês (com valores previstos)")
@@ -91,7 +90,7 @@ if uploaded_file is not None:
     ].copy()
     receitas['status'] = receitas['data de pagamento'].apply(lambda x: 'Pago' if pd.notnull(x) else 'Pendente')
     receitas_pendentes = receitas[receitas['status'] == 'Pendente']
-    st.subheader("📥 Receitas Pendentes de Recebimento — Agrupadas")
+    st.subheader("📅 Receitas Pendentes de Recebimento — Agrupadas")
     receitas_group = receitas_pendentes.groupby(['cliente/fornecedor', 'categoria', 'data de vencimento'])['valor'].sum().reset_index()
     st.dataframe(receitas_group)
     st.write(f"**Total:** R$ {receitas_pendentes['valor'].sum():,.2f} | **{len(receitas_pendentes)} registros**")
@@ -99,17 +98,17 @@ if uploaded_file is not None:
     receitas_recebidas = receitas[receitas['status'] == 'Pago'].copy()
     receitas_recebidas['mes_recebimento'] = receitas_recebidas['data de pagamento'].dt.to_period('M')
 
-    ultimos_12 = pd.period_range(end=pd.to_datetime('today').to_period('M'), periods=12, freq='M')
-    receita_mensal = receitas_recebidas.groupby('mes_recebimento')['valor'].sum().reindex(ultimos_12, fill_value=0).reset_index()
+    receita_mensal = receitas_recebidas.groupby('mes_recebimento')['valor'].sum().reset_index()
     receita_mensal.columns = ['mes', 'valor']
     receita_mensal['mes'] = receita_mensal['mes'].astype(str)
+    receita_mensal = receita_mensal.tail(12).copy()
 
     st.subheader("📊 Gráfico: Receita Mensal dos Últimos 12 Meses")
     fig_receita = px.bar(receita_mensal, x='mes', y='valor')
     st.plotly_chart(fig_receita)
 
     if receita_mensal['valor'].sum() > 0:
-        receita_mensal['EMA'] = receita_mensal['valor'].ewm(span=8, adjust=False).mean()
+        receita_mensal['EMA'] = receita_mensal['valor'].ewm(span=3, adjust=False).mean()
         ultima_data = pd.to_datetime(receita_mensal['mes'].iloc[-1])
 
         meses_futuros = pd.period_range(
@@ -138,8 +137,9 @@ if uploaded_file is not None:
         despesa_agregada = despesa_agregada.rename(columns={'valor': 'despesa_prevista'})
 
         gap_df = previsao.merge(despesa_agregada, left_on='mes', right_on='mes_ano', how='left').drop(columns='mes_ano')
-        gap_df['despesa_prevista'] = gap_df['despesa_prevista'].fillna(0)
-        gap_df['gap_caixa'] = gap_df['receita_projetada'] + gap_df['despesa_prevista']
+        gap_df['despesa_prevista'] = gap_df['despesa_prevista'].fillna(0).abs()
+        gap_df['receita_projetada'] = gap_df['receita_projetada'].abs()
+        gap_df['gap_caixa'] = gap_df['receita_projetada'] - gap_df['despesa_prevista']
 
         st.subheader("📊 Gráfico: Gap de Caixa (Receita Projetada - Despesa Prevista)")
         fig_gap = px.bar(
@@ -154,4 +154,4 @@ if uploaded_file is not None:
         st.plotly_chart(fig_gap)
 
     else:
-        st.warning("❗ Não há dados de receita recebida suficientes para gerar projeção e gap de caixa.")
+        st.warning("❗️ Não há dados de receita recebida suficientes para gerar projeção e gap de caixa.")
