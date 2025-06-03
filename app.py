@@ -52,7 +52,6 @@ if uploaded_file is not None:
     atrasadas = despesas_pendentes[despesas_pendentes['data de vencimento'] <= hoje]
     a_vencer = despesas_pendentes[despesas_pendentes['data de vencimento'] > hoje].copy()
 
-    # Substituir valores zero pela média histórica
     for idx, row in a_vencer.iterrows():
         if row['valor'] == 0 or pd.isna(row['valor']):
             historico = df[
@@ -66,88 +65,51 @@ if uploaded_file is not None:
                 a_vencer.at[idx, 'valor'] = media_valor
 
     st.subheader("⏰ Despesas Atrasadas — Agrupadas")
-
     atrasadas['mes_ano'] = atrasadas['data de vencimento'].dt.to_period('M').astype(str)
-
     atrasadas_group = atrasadas.groupby(['cliente/fornecedor', 'categoria', 'mes_ano'])['valor'].sum().reset_index()
-
     st.dataframe(atrasadas_group)
-
-    total_atrasadas = atrasadas['valor'].sum()
-    n_atrasadas = len(atrasadas)
-
-    if not atrasadas.empty:
-        min_date = atrasadas['data de vencimento'].min().strftime('%b/%Y')
-        max_date = atrasadas['data de vencimento'].max().strftime('%b/%Y')
-        periodo = f"De {min_date} até {max_date}"
-    else:
-        periodo = "Sem despesas atrasadas"
-
-    st.write(f"**Total:** R$ {total_atrasadas:,.2f} | **{n_atrasadas} registros**")
-    st.write(f"**Período:** {periodo}")
+    st.write(f"**Total:** R$ {atrasadas['valor'].sum():,.2f} | **{len(atrasadas)} registros**")
 
     st.subheader("⏳ Despesas A Vencer (com valores previstos) — Agrupadas")
-
     a_vencer_group = a_vencer.groupby(['cliente/fornecedor', 'categoria', 'data de vencimento'])['valor'].sum().reset_index()
-
     st.dataframe(a_vencer_group)
-
-    total_avencer = a_vencer['valor'].sum()
-    n_avencer = len(a_vencer)
-
-    st.write(f"**Total:** R$ {total_avencer:,.2f} | **{n_avencer} registros**")
+    st.write(f"**Total:** R$ {a_vencer['valor'].sum():,.2f} | **{len(a_vencer)} registros**")
 
     # Gráfico de Despesas a Vencer
     a_vencer['mes_ano'] = a_vencer['data de vencimento'].dt.to_period('M').astype(str)
     grafico_despesas = a_vencer.groupby('mes_ano')['valor'].sum().reset_index()
-
     st.subheader("📊 Gráfico: Despesas a Vencer Mês a Mês (com valores previstos)")
-    fig_desp = px.bar(grafico_despesas, x='mes_ano', y='valor', title='Despesas Pendentes a Vencer Mês a Mês (Com Valores Previstos)')
+    fig_desp = px.bar(grafico_despesas, x='mes_ano', y='valor')
     st.plotly_chart(fig_desp)
 
     # ✅ RECEITAS
     st.header("💰 Análise de Receitas")
-
     receitas = df[
         (df['categoria'].str.lower().str.contains('receita')) &
         (~df['categoria'].str.lower().str.contains('financeira')) &
         (~df['categoria'].str.lower().str.contains('recurso próprio'))
     ].copy()
-
     receitas['status'] = receitas['data de pagamento'].apply(lambda x: 'Pago' if pd.notnull(x) else 'Pendente')
-
     receitas_pendentes = receitas[receitas['status'] == 'Pendente']
-
     st.subheader("📥 Receitas Pendentes de Recebimento — Agrupadas")
-
     receitas_group = receitas_pendentes.groupby(['cliente/fornecedor', 'categoria', 'data de vencimento'])['valor'].sum().reset_index()
-
     st.dataframe(receitas_group)
-
-    total_receitas = receitas_pendentes['valor'].sum()
-    n_receitas = len(receitas_pendentes)
-
-    st.write(f"**Total:** R$ {total_receitas:,.2f} | **{n_receitas} registros**")
+    st.write(f"**Total:** R$ {receitas_pendentes['valor'].sum():,.2f} | **{len(receitas_pendentes)} registros**")
 
     receitas_recebidas = receitas[receitas['status'] == 'Pago'].copy()
     receitas_recebidas['mes_recebimento'] = receitas_recebidas['data de pagamento'].dt.to_period('M')
 
-    # Receita Mensal últimos 12 meses
-    ultimos_12 = pd.period_range(
-        end=pd.to_datetime('today').to_period('M'), periods=12, freq='M'
-    )
-
+    ultimos_12 = pd.period_range(end=pd.to_datetime('today').to_period('M'), periods=12, freq='M')
     receita_mensal = receitas_recebidas.groupby('mes_recebimento')['valor'].sum().reindex(ultimos_12, fill_value=0).reset_index()
     receita_mensal.columns = ['mes', 'valor']
     receita_mensal['mes'] = receita_mensal['mes'].astype(str)
 
     st.subheader("📊 Gráfico: Receita Mensal dos Últimos 12 Meses")
-    fig_receita = px.bar(receita_mensal, x='mes', y='valor', title='Receita Mensal — Últimos 12 Meses')
+    fig_receita = px.bar(receita_mensal, x='mes', y='valor')
     st.plotly_chart(fig_receita)
 
-    # Projeção: Média Móvel Exponencial (EMA)
     if receita_mensal['valor'].sum() > 0:
-        receita_mensal['EMA'] = receita_mensal['valor'].ewm(span=3, adjust=False).mean()
+        receita_mensal['EMA'] = receita_mensal['valor'].ewm(span=8, adjust=False).mean()
         ultima_data = pd.to_datetime(receita_mensal['mes'].iloc[-1])
 
         meses_futuros = pd.period_range(
@@ -160,44 +122,35 @@ if uploaded_file is not None:
 
         previsao = pd.DataFrame({
             'mes': meses_futuros.astype(str),
-            'valor_projetado': [ultima_ema] * len(meses_futuros)
+            'receita_projetada': [ultima_ema] * len(meses_futuros)
         })
 
         st.subheader("📈 Projeção de Receita para os Próximos Meses")
         st.dataframe(previsao)
 
-        fig_proj = px.bar(previsao, x='mes', y='valor_projetado', title='Projeção de Receita — Próximos Meses (EMA)')
+        fig_proj = px.bar(previsao, x='mes', y='receita_projetada')
         st.plotly_chart(fig_proj)
 
-        # GAP DE CAIXA: Receita projetada - Despesa prevista
-
+        # GAP DE CAIXA
         despesa_prevista = a_vencer.copy()
         despesa_prevista['mes_ano'] = despesa_prevista['data de vencimento'].dt.to_period('M').astype(str)
         despesa_agregada = despesa_prevista.groupby('mes_ano')['valor'].sum().reset_index()
         despesa_agregada = despesa_agregada.rename(columns={'valor': 'despesa_prevista'})
 
-        gap_df = previsao.copy()
-        gap_df = gap_df.rename(columns={'valor_projetado': 'receita_projetada'})
-        gap_df['despesa_prevista'] = gap_df['mes'].map(
-            despesa_agregada.set_index('mes_ano')['despesa_prevista']
-        ).fillna(0)
-
-        gap_df['despesa_prevista'] = gap_df['despesa_prevista'].abs()
-
-        gap_df['gap_caixa'] = gap_df['receita_projetada'] - gap_df['despesa_prevista']
+        gap_df = previsao.merge(despesa_agregada, left_on='mes', right_on='mes_ano', how='left').drop(columns='mes_ano')
+        gap_df['despesa_prevista'] = gap_df['despesa_prevista'].fillna(0)
+        gap_df['gap_caixa'] = gap_df['receita_projetada'] + gap_df['despesa_prevista']
 
         st.subheader("📊 Gráfico: Gap de Caixa (Receita Projetada - Despesa Prevista)")
-
         fig_gap = px.bar(
-            gap_df, 
-            x='mes', 
-            y='gap_caixa', 
-            title='Gap de Caixa — Receita Projetada vs. Despesa Prevista',
-            labels={'gap_caixa': 'Gap de Caixa (R$)'},
+            gap_df,
+            x='mes',
+            y='gap_caixa',
             color='gap_caixa',
-            color_continuous_scale='RdYlGn'
+            color_continuous_scale='RdYlGn',
+            title='Gap de Caixa — Receita Projetada vs. Despesa Prevista',
+            labels={'gap_caixa': 'Gap de Caixa (R$)'}
         )
-
         st.plotly_chart(fig_gap)
 
     else:
